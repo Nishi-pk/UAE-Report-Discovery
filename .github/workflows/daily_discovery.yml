@@ -29,7 +29,8 @@ jobs:
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python -m discovery.main
+          PYTHONUNBUFFERED: "1"   # flush print() output live instead of buffering until exit
+        run: python -u -m discovery.main
 
       - name: Commit updated inbox
         run: |
