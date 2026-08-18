@@ -4,7 +4,12 @@ on:
   schedule:
     # 06:00 Gulf Standard Time (UTC+4) = 02:00 UTC. Adjust as needed.
     - cron: "0 2 * * *"
-  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      max_queries:
+        description: "Cap number of search queries (leave blank for full run, ~240 queries)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -30,7 +35,13 @@ jobs:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PYTHONUNBUFFERED: "1"   # flush print() output live instead of buffering until exit
-        run: python -u -m discovery.main
+          MAX_QUERIES: ${{ github.event.inputs.max_queries }}
+        run: |
+          if [ -n "$MAX_QUERIES" ]; then
+            python -u -m discovery.main --max-queries "$MAX_QUERIES"
+          else
+            python -u -m discovery.main
+          fi
 
       - name: Commit updated inbox
         run: |
