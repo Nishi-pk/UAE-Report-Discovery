@@ -17,7 +17,25 @@ from datetime import date
 from typing import List, Dict
 
 
-def build_digest(new_rows: List[Dict]) -> str:
+GITHUB_ISSUE_CHAR_LIMIT = 65536
+SAFE_CHAR_BUDGET = 60000  # leave headroom below the hard limit
+
+
+def build_digest(new_rows: List[Dict], max_low_shown: int = 15) -> str:
+    """
+    Builds the digest, keeping it well under GitHub's issue body size limit.
+
+    GitHub Issues cap out at ~65,536 characters. A large first run (or a
+    noisy day) can easily produce a digest longer than that, so:
+      - 🔴 High and 🟠 Medium are always shown in full (these are the ones
+        that matter most and there are usually few of them).
+      - 🟡 Low is capped at `max_low_shown` entries, with a note pointing to
+        the full CSV for the rest — low-priority items rarely need a
+        same-day read anyway.
+      - As a final safety net, if the digest is still too long (e.g. an
+        unusually large 🔴/🟠 batch), it gets hard-truncated with a clear
+        note, so the Issue post never fails outright.
+    """
     today_str = date.today().strftime("%d %B %Y").upper()
 
     high = [r for r in new_rows if r["Priority"].startswith("🔴")]
@@ -29,6 +47,9 @@ def build_digest(new_rows: List[Dict]) -> str:
         "",
         f"**{len(new_rows)} new potentially relevant reports found** "
         f"({len(high)} high / {len(medium)} medium / {len(low)} low priority)",
+        "",
+        "_Full list, including every 🟡 Low item, is always in "
+        "`data/discovery_inbox.csv`._",
         "",
     ]
 
@@ -55,7 +76,16 @@ def build_digest(new_rows: List[Dict]) -> str:
 
     lines += section("🔴 High Priority", high)
     lines += section("🟠 Medium Priority", medium)
-    lines += section("🟡 Low Priority", low)
+
+    # Low priority: capped, with an overflow note rather than every entry
+    low_shown = low[:max_low_shown]
+    low_remaining = len(low) - len(low_shown)
+    lines += section("🟡 Low Priority" if not low_remaining
+                      else f"🟡 Low Priority (showing {len(low_shown)} of {len(low)})",
+                      low_shown)
+    if low_remaining > 0:
+        lines.append(f"_...and {low_remaining} more 🟡 Low items — see the CSV for the full list._")
+        lines.append("")
 
     if not new_rows:
         lines.append("_No new reports found today._")
@@ -67,7 +97,19 @@ def build_digest(new_rows: List[Dict]) -> str:
         "**Status** column to `Add to Report Hunt` or `Ignore` for each row."
     )
 
-    return "\n".join(lines)
+    digest = "\n".join(lines)
+
+    # Final safety net: if 🔴/🟠 alone somehow still exceed the limit
+    # (a genuinely unusual day), hard-truncate rather than let the Issue
+    # post fail outright.
+    if len(digest) > SAFE_CHAR_BUDGET:
+        digest = (
+            digest[:SAFE_CHAR_BUDGET]
+            + "\n\n---\n_⚠️ Digest truncated — too many results to fit in one "
+            "GitHub Issue today. Full list is in `data/discovery_inbox.csv`._"
+        )
+
+    return digest
 
 
 def save_digest(text: str, path: str = "data/latest_digest.md"):
