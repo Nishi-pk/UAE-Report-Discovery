@@ -1,0 +1,140 @@
+# =============================================================================
+# UAE Report Discovery — Configuration
+# =============================================================================
+# Edit this file to tune what the discovery engine searches for and how it
+# scores relevance. No code changes needed for most adjustments.
+
+# Which years to search for. Update each January (or leave both — searches
+# for "2025" won't return much once orgs have moved on to 2026/2027 releases).
+years:
+  - 2026
+  - 2027
+
+# Country/city terms — every combination below is paired with a terminology
+# term and, separately, with each priority org's site.
+subjects:
+  - "United Arab Emirates"
+  - "UAE"
+  - "Dubai"
+  - "Abu Dhabi"
+
+# Report-type terminology. Deliberately broad — do NOT narrow this to just
+# "competitiveness" or you will miss reports like the Trust Barometer or
+# the AI Index that are relevant but don't use that word.
+terminology:
+  - index
+  - ranking
+  - benchmark
+  - barometer
+  - scorecard
+  - assessment
+  - outlook
+  - survey
+  - "global index"
+  - "international ranking"
+  - competitiveness
+  - performance report
+
+# Organisations FCSC already tracks or should watch closely. Each becomes a
+# site:domain search paired with subject + year (no terminology needed —
+# almost everything these orgs publish is in-scope).
+priority_orgs:
+  - name: "World Economic Forum"
+    domain: "weforum.org"
+  - name: "World Bank"
+    domain: "worldbank.org"
+  - name: "UNDP"
+    domain: "undp.org"
+  - name: "OECD"
+    domain: "oecd.org"
+  - name: "IMD World Competitiveness Center"
+    domain: "imd.org"
+  - name: "INSEAD"
+    domain: "insead.edu"
+  - name: "Legatum Institute"
+    domain: "li.com"
+  - name: "World Justice Project"
+    domain: "worldjusticeproject.org"
+  - name: "Henley & Partners"
+    domain: "henleyglobal.com"
+  - name: "ESCWA"
+    domain: "unescwa.org"
+  - name: "IMF"
+    domain: "imf.org"
+  - name: "Transparency International"
+    domain: "transparency.org"
+  - name: "World Health Organization"
+    domain: "who.int"
+  - name: "United Nations (SDGs)"
+    domain: "un.org"
+  - name: "World Intellectual Property Organization"
+    domain: "wipo.int"
+  - name: "Economist Intelligence Unit"
+    domain: "eiu.com"
+  - name: "Portulans Institute (NRI/GTCI)"
+    domain: "portulansinstitute.org"
+
+# Vocabulary built from FCSC's existing ~50-report portfolio. Used by the
+# classifier to catch reports that are relevant but don't contain the word
+# "competitiveness" or "UAE" prominently in the title — e.g. a "Global
+# Cities Index" that scores infrastructure, governance, and human capital.
+relevance_vocabulary:
+  - economic
+  - governance
+  - innovation
+  - technology
+  - digital
+  - talent
+  - human capital
+  - education
+  - infrastructure
+  - sustainability
+  - quality of life
+  - social
+  - gender
+  - gender balance
+  - security
+  - tourism
+  - investment
+  - trade
+  - financial
+  - competitiveness
+  - smart city
+  - prosperity
+  - rule of law
+  - R&D
+  - research and development
+  - AI readiness
+  - future skills
+  - passport / mobility
+  - firepower / defence
+  - happiness / wellbeing
+
+# Reports already actively tracked in FCSC's separate "Report Hunt" system.
+# The discovery engine will flag matches here as "Already tracked" instead
+# of raising them as new discoveries. Add to this list as your Report Hunt
+# list grows — it's just for dedup, not required for the pipeline to run.
+already_tracked:
+  - "Legatum Prosperity Index"
+  - "SDG Index"
+  - "IMD World Competitiveness Yearbook"
+  - "IMD World Digital Competitiveness Ranking"
+  - "IMD Smart City Index"
+  - "World Justice Project Rule of Law Index"
+  - "Chandler Good Government Index"
+  - "Environmental Performance Index"
+  - "Global Peace Index"
+  - "Henley Passport Index"
+  - "Global Firepower Index"
+  - "Good Life Index"
+  - "Global Innovation Index"
+  - "Global Talent Competitiveness Index"
+  - "WEF Executive Opinion Survey"
+
+# Priority scoring thresholds — how the classifier should think about tiers.
+# (Full rubric text lives in discovery/classify.py; this is just the label set.)
+priority_labels:
+  - "🔴 High"
+  - "🟠 Medium"
+  - "🟡 Low"
+  - "⚪ Ignore"

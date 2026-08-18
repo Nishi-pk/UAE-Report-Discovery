@@ -1,0 +1,173 @@
+"""
+classify.py — uses the Anthropic API to score each search result for
+relevance and assign a priority tier, following the rubric from the
+original project brief:
+
+  🔴 High priority   — UAE has an explicit rank/score (e.g. "UAE ranked 24/140")
+  🟠 Medium priority  — UAE is explicitly included and benchmarked against others
+  🟡 Low priority     — UAE is mentioned but there's no meaningful ranking/score
+  ⚪ Ignore           — No meaningful UAE/competitiveness relevance
+
+Batches results to keep API calls efficient (default: 10 per call).
+"""
+
+import os
+import json
+import time
+from typing import List, Dict, Any
+
+import anthropic
+
+MODEL = "claude-sonnet-4-6"
+
+SYSTEM_PROMPT_TEMPLATE = """You are a research triage assistant for the UAE's \
+Federal Competitiveness and Statistics Centre (FCSC). Your job is to review \
+raw web search results and decide which ones are genuinely new, relevant \
+global reports, indices, rankings, or benchmarks that mention the UAE, \
+Dubai, or Abu Dhabi.
+
+FCSC cares about topics including (but not limited to): {vocabulary}
+
+Score each result using this exact rubric:
+
+- "high": The result clearly shows the UAE (or Dubai/Abu Dhabi) has an \
+explicit rank or numeric score in a global index/ranking/report \
+(e.g. "UAE ranked 24th of 140 countries").
+- "medium": The UAE is explicitly included and compared/benchmarked against \
+other countries, but no single clean rank/score is visible in the snippet.
+- "low": The UAE/Dubai/Abu Dhabi is mentioned, but there's no indication of \
+a meaningful ranking, score, or benchmarking exercise (e.g. a general news \
+mention).
+- "ignore": No meaningful connection to UAE competitiveness — irrelevant \
+domain (e.g. real estate listings, sports rankings, unrelated local news), \
+duplicate/old report, or not actually about a report/index/ranking at all.
+
+For each result also extract, if visible from the title/snippet:
+  - report_name: best-guess clean name of the report/index (not the article title)
+  - organisation: publishing organisation, if identifiable
+  - uae_mention: short phrase describing UAE's mention (e.g. "UAE #31/140", \
+"UAE included, no score visible", "UAE mentioned only")
+  - report_type: one of "Index", "Ranking", "Report", "Survey", "Benchmark", \
+"Other"
+  - year: the year the report/edition refers to, if identifiable, else null
+
+Respond with ONLY a JSON array, one object per input result, in the same \
+order as given, with this exact shape and no other text:
+
+[
+  {{
+    "index": 0,
+    "priority": "high" | "medium" | "low" | "ignore",
+    "report_name": "string or null",
+    "organisation": "string or null",
+    "uae_mention": "string or null",
+    "report_type": "string or null",
+    "year": "string or null",
+    "reasoning": "one short sentence"
+  }}
+]
+"""
+
+PRIORITY_EMOJI = {
+    "high": "🔴 High",
+    "medium": "🟠 Medium",
+    "low": "🟡 Low",
+    "ignore": "⚪ Ignore",
+}
+
+
+def _client() -> anthropic.Anthropic:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY environment variable not set.")
+    return anthropic.Anthropic(api_key=api_key)
+
+
+def _build_batch_prompt(results_batch: List[Dict[str, Any]]) -> str:
+    lines = []
+    for i, r in enumerate(results_batch):
+        lines.append(
+            f'{i}. TITLE: {r["title"]}\n   URL: {r["url"]}\n   SNIPPET: {r["snippet"]}'
+        )
+    return "Classify these search results:\n\n" + "\n\n".join(lines)
+
+
+def classify_batch(
+    results_batch: List[Dict[str, Any]], vocabulary: List[str], client: anthropic.Anthropic
+) -> List[Dict[str, Any]]:
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(vocabulary=", ".join(vocabulary))
+    user_prompt = _build_batch_prompt(results_batch)
+
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=2000,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+
+    text = "".join(block.text for block in response.content if block.type == "text")
+    text = text.strip()
+    # Strip accidental markdown fences
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text.replace("json\n", "", 1) if text.startswith("json\n") else text
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        print("[classify] failed to parse model output, skipping batch:")
+        print(text[:500])
+        return []
+
+    return parsed
+
+
+def classify_all(
+    results: List[Dict[str, Any]],
+    vocabulary: List[str],
+    batch_size: int = 10,
+    sleep_seconds: float = 0.5,
+) -> List[Dict[str, Any]]:
+    """
+    Classifies a full list of search results (as dicts, e.g. from
+    SearchResult.to_dict()). Returns the same results enriched with
+    classification fields, with 'ignore' items still included so callers
+    can decide whether to filter them.
+    """
+    client = _client()
+    enriched: List[Dict[str, Any]] = []
+
+    for start in range(0, len(results), batch_size):
+        batch = results[start : start + batch_size]
+        classifications = classify_batch(batch, vocabulary, client)
+
+        class_by_index = {c["index"]: c for c in classifications}
+        for i, r in enumerate(batch):
+            c = class_by_index.get(i)
+            merged = dict(r)
+            if c:
+                merged["priority"] = c.get("priority", "low")
+                merged["priority_label"] = PRIORITY_EMOJI.get(c.get("priority", "low"), "🟡 Low")
+                merged["report_name"] = c.get("report_name") or r["title"]
+                merged["organisation"] = c.get("organisation")
+                merged["uae_mention"] = c.get("uae_mention")
+                merged["report_type"] = c.get("report_type")
+                merged["year"] = c.get("year")
+                merged["reasoning"] = c.get("reasoning")
+            else:
+                # classification failed for this item — default to low priority
+                # for manual review rather than silently dropping it
+                merged["priority"] = "low"
+                merged["priority_label"] = "🟡 Low"
+                merged["report_name"] = r["title"]
+                merged["organisation"] = None
+                merged["uae_mention"] = None
+                merged["report_type"] = None
+                merged["year"] = None
+                merged["reasoning"] = "Classification failed; needs manual review."
+            enriched.append(merged)
+
+        print(f"[classify] {min(start + batch_size, len(results))}/{len(results)} done")
+        time.sleep(sleep_seconds)
+
+    return enriched
