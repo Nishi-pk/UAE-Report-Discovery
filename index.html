@@ -238,6 +238,15 @@
     max-width: 340px;
   }
 
+  .source-col { max-width: 160px; }
+  .source-link {
+    color: var(--navy);
+    font-size: 12.5px;
+    text-decoration: none;
+    border-bottom: 1px dotted var(--gold);
+  }
+  .source-link:hover { color: var(--gold); }
+
   .badge {
     display: inline-block;
     padding: 3px 10px;
@@ -361,6 +370,7 @@
       <tr>
         <th data-key="priority">Priority <span class="arrow">▾</span></th>
         <th data-key="report">Report</th>
+        <th data-key="source">Source</th>
         <th data-key="mention">UAE Mention</th>
         <th data-key="date">Found <span class="arrow">▾</span></th>
         <th data-key="status">Status</th>
@@ -495,6 +505,9 @@ function render() {
     } else if (sortKey === 'report') {
       av = (a.Report || '').toLowerCase();
       bv = (b.Report || '').toLowerCase();
+    } else if (sortKey === 'source') {
+      av = (a.Source || '').toLowerCase();
+      bv = (b.Source || '').toLowerCase();
     } else {
       av = ''; bv = '';
     }
@@ -528,6 +541,7 @@ function render() {
           <div class="org">${escapeHtml(r.Organisation || '')}</div>
           ${trackedTag}
         </td>
+        <td class="source-col">${sourceLink(r.Source)}</td>
         <td class="mention">${escapeHtml(r['UAE Mention'] || '—')}</td>
         <td class="date-col">${escapeHtml(r['Date Found'] || '')}</td>
         <td>${escapeHtml(r.Status || '')}</td>
@@ -544,6 +558,17 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function escapeAttr(s) { return escapeHtml(s); }
+
+function sourceLink(url) {
+  if (!url) return '<span style="color:#8B93A0;">—</span>';
+  let domain;
+  try {
+    domain = new URL(url).hostname.replace(/^www\./, '');
+  } catch (e) {
+    domain = url; // fallback if URL is malformed
+  }
+  return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener" class="source-link">${escapeHtml(domain)}</a>`;
+}
 
 document.querySelectorAll('.chip').forEach(chip => {
   chip.addEventListener('click', () => {
