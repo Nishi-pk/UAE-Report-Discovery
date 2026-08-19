@@ -301,6 +301,30 @@
 </head>
 <body>
 
+<div id="gateScreen" style="
+  position: fixed; inset: 0; background: #0A2540; z-index: 999;
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  font-family: 'Calibri', 'Segoe UI', -apple-system, sans-serif;
+">
+  <div style="background: #F7F5F0; padding: 40px 36px; border-radius: 10px; max-width: 340px; width: 90%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35);">
+    <div style="font-family: 'CambriaFallback', Cambria, Georgia, serif; font-size: 22px; color: #0A2540; margin-bottom: 6px;">UAE Report Discovery</div>
+    <div style="font-size: 13px; color: #5B6675; margin-bottom: 22px;">Enter the passcode to view the dashboard.</div>
+    <input type="password" id="passcodeInput" placeholder="Passcode" style="
+      width: 100%; padding: 11px 14px; border: 1px solid #DCD5C4; border-radius: 6px;
+      font-size: 15px; text-align: center; letter-spacing: 0.05em; box-sizing: border-box;
+      font-family: inherit;
+    ">
+    <button id="gateSubmit" style="
+      margin-top: 14px; width: 100%; padding: 11px; background: #0A2540; color: white;
+      border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;
+      font-family: inherit;
+    ">Enter</button>
+    <div id="gateError" style="color: #B33A3A; font-size: 12.5px; margin-top: 10px; display: none;">Incorrect passcode — try again.</div>
+  </div>
+</div>
+
+<div id="mainContent" style="display: none;">
+
 <header>
   <div class="eyebrow">FCSC · Competitiveness Team</div>
   <h1 class="display">UAE Report Discovery</h1>
@@ -353,9 +377,46 @@
   Data refreshes automatically whenever <code>data/discovery_inbox.csv</code> updates in the repo.
   "Generate Brief" (per High priority item) is coming in a future update.
 </footer>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script>
+// --- Passcode gate -----------------------------------------------------
+// This is a lightweight deterrent against casual/accidental access, not
+// real security — the page's own code is visible to anyone who looks, so
+// don't rely on this for genuinely sensitive data. It's meant to keep this
+// from being an open, unlisted link anyone could stumble into, nothing more.
+const CORRECT_HASH = 'REPLACE_WITH_HASH'; // set via setup step below
+
+async function sha256(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function tryUnlock() {
+  const input = document.getElementById('passcodeInput').value;
+  const hash = await sha256(input);
+  if (hash === CORRECT_HASH) {
+    sessionStorage.setItem('uae_discovery_unlocked', '1');
+    document.getElementById('gateScreen').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+  } else {
+    document.getElementById('gateError').style.display = 'block';
+  }
+}
+
+document.getElementById('gateSubmit').addEventListener('click', tryUnlock);
+document.getElementById('passcodeInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') tryUnlock();
+});
+
+// Skip the gate if already unlocked this browser session
+if (sessionStorage.getItem('uae_discovery_unlocked') === '1') {
+  document.getElementById('gateScreen').style.display = 'none';
+  document.getElementById('mainContent').style.display = 'block';
+}
+// --- End passcode gate ---------------------------------------------------
+
 const CSV_PATH = 'data/discovery_inbox.csv';
 let allRows = [];
 let sortKey = 'priority';
