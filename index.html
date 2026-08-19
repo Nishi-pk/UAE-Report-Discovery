@@ -386,7 +386,7 @@
 // real security — the page's own code is visible to anyone who looks, so
 // don't rely on this for genuinely sensitive data. It's meant to keep this
 // from being an open, unlisted link anyone could stumble into, nothing more.
-const CORRECT_HASH = 'REPLACE_WITH_HASH'; // set via setup step below
+const CORRECT_HASH = '3db1d6cc4e105848440b6204593c2504f747a8f33742aaf360563cccaadf6772';
 
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
