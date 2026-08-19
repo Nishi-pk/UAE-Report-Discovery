@@ -12,6 +12,12 @@ Usage:
     python -m discovery.main                  # full run
     python -m discovery.main --max-queries 20  # cheaper test run
     python -m discovery.main --keep-ignored    # also log ⚪ Ignore rows
+    python -m discovery.main --skip-classify   # search + save only, no Claude
+                                                # API calls / cost. Rows are
+                                                # saved unlabeled (⚠️ Unclassified)
+                                                # so they still show up next
+                                                # time you DO classify — nothing
+                                                # gets lost, just left unsorted.
 """
 
 import argparse
@@ -37,6 +43,9 @@ def main():
                          help="Cap number of search queries run (cost control / testing)")
     parser.add_argument("--keep-ignored", action="store_true",
                          help="Also write ⚪ Ignore rows to the inbox instead of dropping them")
+    parser.add_argument("--skip-classify", action="store_true",
+                         help="Skip the Claude classification step entirely (no API cost). "
+                              "Rows are saved with priority 'Unclassified' for manual review.")
     args = parser.parse_args()
 
     config = load_config()
@@ -61,14 +70,29 @@ def main():
         print(digest_text)
         return
 
-    print("[main] classifying with Claude...")
     result_dicts = [r.to_dict() for r in new_results]
-    classified = classify_all(result_dicts, config["relevance_vocabulary"])
 
-    if not args.keep_ignored:
-        before = len(classified)
-        classified = [c for c in classified if c["priority"] != "ignore"]
-        print(f"[main] dropped {before - len(classified)} ⚪ ignore results")
+    if args.skip_classify:
+        print("[main] --skip-classify set: skipping Claude API calls entirely")
+        classified = []
+        for r in result_dicts:
+            item = dict(r)
+            item["priority"] = "unclassified"
+            item["priority_label"] = "⚠️ Unclassified"
+            item["report_name"] = r["title"]  # no cleanup without Claude
+            item["organisation"] = None
+            item["uae_mention"] = None
+            item["report_type"] = None
+            item["year"] = None
+            classified.append(item)
+    else:
+        print("[main] classifying with Claude...")
+        classified = classify_all(result_dicts, config["relevance_vocabulary"])
+
+        if not args.keep_ignored:
+            before = len(classified)
+            classified = [c for c in classified if c["priority"] != "ignore"]
+            print(f"[main] dropped {before - len(classified)} ⚪ ignore results")
 
     already_tracked_list = config.get("already_tracked", [])
     rows = []

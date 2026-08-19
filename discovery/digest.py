@@ -41,12 +41,20 @@ def build_digest(new_rows: List[Dict], max_low_shown: int = 15) -> str:
     high = [r for r in new_rows if r["Priority"].startswith("🔴")]
     medium = [r for r in new_rows if r["Priority"].startswith("🟠")]
     low = [r for r in new_rows if r["Priority"].startswith("🟡")]
+    unclassified = [r for r in new_rows if r["Priority"].startswith("⚠️")]
+
+    count_line = f"**{len(new_rows)} new potentially relevant reports found**"
+    if unclassified:
+        # A --skip-classify run: nothing has priority labels, say so plainly
+        # rather than showing a misleading "0 high / 0 medium / 0 low".
+        count_line += f" ({len(unclassified)} unclassified — run without --skip-classify to prioritize)"
+    else:
+        count_line += f" ({len(high)} high / {len(medium)} medium / {len(low)} low priority)"
 
     lines = [
         f"# 🔎 UAE Report Discovery — {today_str}",
         "",
-        f"**{len(new_rows)} new potentially relevant reports found** "
-        f"({len(high)} high / {len(medium)} medium / {len(low)} low priority)",
+        count_line,
         "",
         "_Full list, including every 🟡 Low item, is always in "
         "`data/discovery_inbox.csv`._",
@@ -85,6 +93,18 @@ def build_digest(new_rows: List[Dict], max_low_shown: int = 15) -> str:
                       low_shown)
     if low_remaining > 0:
         lines.append(f"_...and {low_remaining} more 🟡 Low items — see the CSV for the full list._")
+        lines.append("")
+
+    # Unclassified: capped the same way as Low, since there can be hundreds
+    unclass_shown = unclassified[:max_low_shown]
+    unclass_remaining = len(unclassified) - len(unclass_shown)
+    lines += section(
+        "⚠️ Unclassified (found, not yet scored)" if not unclass_remaining
+        else f"⚠️ Unclassified (showing {len(unclass_shown)} of {len(unclassified)})",
+        unclass_shown,
+    )
+    if unclass_remaining > 0:
+        lines.append(f"_...and {unclass_remaining} more unclassified items — see the CSV._")
         lines.append("")
 
     if not new_rows:
