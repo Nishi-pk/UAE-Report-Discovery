@@ -465,7 +465,7 @@
         <th data-key="mention">UAE Mention</th>
         <th data-key="category">Category</th>
         <th data-key="pubdate" title="Date the source page/post was published">Published</th>
-        <th data-key="date">Found <span class="arrow">▾</span></th>
+        <th data-key="date" class="sorted">Found <span class="arrow">▾</span></th>
         <th></th>
       </tr>
     </thead>
@@ -525,8 +525,8 @@ if (sessionStorage.getItem('uae_discovery_unlocked') === '1') {
 
 const CSV_PATH = 'data/discovery_inbox.csv';
 let allRows = [];
-let sortKey = 'priority';
-let sortDir = 1;
+let sortKey = 'date';
+let sortDir = -1; // newest first by default
 let activeFilter = 'all';
 let activeCategory = 'all';
 let currentTab = 'reports';
