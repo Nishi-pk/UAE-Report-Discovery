@@ -466,7 +466,6 @@
         <th data-key="category">Category</th>
         <th data-key="pubdate" title="Date the source page/post was published">Published</th>
         <th data-key="date">Found <span class="arrow">▾</span></th>
-        <th data-key="status">Status</th>
         <th></th>
       </tr>
     </thead>
@@ -656,7 +655,6 @@ function render() {
         <td>${categoryBadge(r['Category'])}</td>
         <td class="date-col">${escapeHtml(r['Publication Date'] || '—')}</td>
         <td class="date-col">${escapeHtml(r['Date Found'] || '')}</td>
-        <td>${escapeHtml(r.Status || '')}</td>
         <td>
           <button class="brief-btn" data-enabled="false" title="Coming soon">
             ${isHigh ? 'Generate Brief' : '—'}
