@@ -256,6 +256,67 @@
     white-space: nowrap;
   }
 
+  /* ---------- Tabs ---------- */
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    padding: 16px 40px 0;
+    background: var(--cream);
+    border-bottom: 1px solid var(--line);
+  }
+  .tab {
+    padding: 10px 20px;
+    border: none;
+    background: none;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--slate);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-family: inherit;
+  }
+  .tab:hover { color: var(--navy); }
+  .tab.active { color: var(--navy); border-bottom-color: var(--gold); }
+
+  /* ---------- Archive ---------- */
+  .archive-year {
+    margin-top: 28px;
+  }
+  .archive-year h2 {
+    font-size: 22px;
+    color: var(--navy);
+    font-weight: 400;
+    margin: 0 0 4px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--navy);
+  }
+  .archive-count {
+    font-size: 12.5px;
+    color: var(--slate);
+    font-weight: 400;
+    margin-left: 10px;
+  }
+  .archive-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 12px 4px;
+    border-bottom: 1px solid var(--line);
+    gap: 20px;
+  }
+  .archive-row .arep-name {
+    font-weight: 600;
+    color: var(--navy);
+    text-decoration: none;
+  }
+  .archive-row .arep-name:hover { color: var(--gold); text-decoration: underline; }
+  .archive-row .arep-pub {
+    font-size: 12.5px;
+    color: var(--slate);
+    flex-shrink: 0;
+  }
+
   .badge {
     display: inline-block;
     padding: 3px 10px;
@@ -363,7 +424,16 @@
   </div>
 </header>
 
-<div class="controls">
+<div class="tab-bar">
+  <button class="tab active" data-tab="reports">Reports</button>
+  <button class="tab" data-tab="archive">Archive</button>
+</div>
+
+<div class="controls" id="reportsControls">
+  <select id="dateFilter" class="chip" style="cursor:pointer; font-weight:600; color:var(--slate); appearance:auto;">
+    <option value="today">Today</option>
+    <option value="all">Select All</option>
+  </select>
   <input type="text" class="search-box" id="searchBox" placeholder="Search report, organisation, or mention…">
   <button class="chip active" data-filter="all">All</button>
   <button class="chip" data-filter="🔴">🔴 High</button>
@@ -385,7 +455,7 @@
   <span class="result-count" id="resultCount"></span>
 </div>
 
-<div class="table-wrap">
+<div class="table-wrap" id="reportsView">
   <table id="reportTable">
     <thead>
       <tr>
@@ -404,6 +474,10 @@
       <tr><td colspan="6" class="empty-state">Loading discovery inbox…</td></tr>
     </tbody>
   </table>
+</div>
+
+<div class="table-wrap" id="archiveView" style="display:none;">
+  <div id="archiveContent"></div>
 </div>
 
 <footer>
@@ -456,6 +530,9 @@ let sortKey = 'priority';
 let sortDir = 1;
 let activeFilter = 'all';
 let activeCategory = 'all';
+let currentTab = 'reports';
+let dateScope = 'today'; // 'today' or 'all'
+const TODAY_STR = new Date().toISOString().slice(0, 10);
 
 const priorityOrder = { '🔴': 0, '🟠': 1, '🟡': 2, '⚠️': 3 };
 const priorityClass = { '🔴': 'high', '🟠': 'medium', '🟡': 'low', '⚠️': 'unclass' };
@@ -475,6 +552,7 @@ async function loadData() {
     const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
     allRows = parsed.data;
     render();
+    renderArchive();
   } catch (err) {
     document.getElementById('tableBody').innerHTML =
       `<tr><td colspan="6" class="empty-state">
@@ -512,6 +590,7 @@ function render() {
   let rows = allRows.filter(r => {
     if (activeFilter !== 'all' && getPriorityEmoji(r.Priority) !== activeFilter) return false;
     if (activeCategory !== 'all' && (r['Category'] || '') !== activeCategory) return false;
+    if (dateScope === 'today' && (r['Date Found'] || '') !== TODAY_STR) return false;
     const q = document.getElementById('searchBox').value.toLowerCase();
     if (!q) return true;
     return (r.Report || '').toLowerCase().includes(q)
@@ -637,6 +716,11 @@ document.getElementById('categoryFilter').addEventListener('change', (e) => {
   render();
 });
 
+document.getElementById('dateFilter').addEventListener('change', (e) => {
+  dateScope = e.target.value;
+  render();
+});
+
 document.querySelectorAll('thead th[data-key]').forEach(th => {
   th.addEventListener('click', () => {
     const key = th.dataset.key;
@@ -646,6 +730,73 @@ document.querySelectorAll('thead th[data-key]').forEach(th => {
     render();
   });
 });
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentTab = tab.dataset.tab;
+    const isReports = currentTab === 'reports';
+    document.getElementById('reportsControls').style.display = isReports ? 'flex' : 'none';
+    document.getElementById('reportsView').style.display = isReports ? '' : 'none';
+    document.getElementById('archiveView').style.display = isReports ? 'none' : '';
+  });
+});
+
+// --- Archive: one entry per unique report name, grouped by year -----------
+function renderArchive() {
+  // Prefer 🔴 High priority source when the same report has multiple rows;
+  // otherwise keep the first one encountered.
+  const byReport = new Map();
+  const priorityRank = { '🔴': 0, '🟠': 1, '🟡': 2, '⚠️': 3 };
+
+  allRows.forEach(r => {
+    const name = (r.Report || '').trim();
+    if (!name) return;
+    const existing = byReport.get(name);
+    const thisRank = priorityRank[getPriorityEmoji(r.Priority)];
+    if (!existing || thisRank < priorityRank[getPriorityEmoji(existing.Priority)]) {
+      byReport.set(name, r);
+    }
+  });
+
+  // Group the deduped reports by year (Publication Date first, fall back to Year field)
+  const byYear = {};
+  byReport.forEach(r => {
+    const pubDate = r['Publication Date'] || '';
+    const yearMatch = pubDate.match(/\d{4}/);
+    const year = yearMatch ? yearMatch[0] : (r['Year'] || 'Undated');
+    if (!byYear[year]) byYear[year] = [];
+    byYear[year].push(r);
+  });
+
+  const years = Object.keys(byYear).sort((a, b) => b.localeCompare(a)); // newest first
+  const container = document.getElementById('archiveContent');
+
+  if (years.length === 0) {
+    container.innerHTML = '<div class="empty-state">No reports yet.</div>';
+    return;
+  }
+
+  container.innerHTML = years.map(year => {
+    const items = byYear[year].sort((a, b) => (a.Report || '').localeCompare(b.Report || ''));
+    const rowsHtml = items.map(r => `
+      <div class="archive-row">
+        <a class="arep-name" href="${escapeAttr(r.Source || '#')}" target="_blank" rel="noopener">
+          ${escapeHtml(r.Report || 'Untitled')}
+          <span style="font-weight:400; color:var(--slate);"> — ${escapeHtml(r.Organisation || 'Unknown publisher')}</span>
+        </a>
+        <span class="arep-pub">${escapeHtml(r['Publication Date'] || r['Year'] || '—')}</span>
+      </div>
+    `).join('');
+    return `
+      <div class="archive-year">
+        <h2>${escapeHtml(year)}<span class="archive-count">${items.length} report${items.length === 1 ? '' : 's'}</span></h2>
+        ${rowsHtml}
+      </div>
+    `;
+  }).join('');
+}
 
 loadData();
 </script>
