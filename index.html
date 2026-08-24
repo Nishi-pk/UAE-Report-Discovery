@@ -435,11 +435,11 @@
     <option value="all">Select All</option>
   </select>
   <input type="text" class="search-box" id="searchBox" placeholder="Search report, organisation, or mention…">
-  <button class="chip active" data-filter="all">All</button>
-  <button class="chip" data-filter="🔴">🔴 High</button>
-  <button class="chip" data-filter="🟠">🟠 Medium</button>
-  <button class="chip" data-filter="🟡">🟡 Low</button>
-  <button class="chip" data-filter="⚠️">⚠️ Unclassified</button>
+  <button class="chip priority-chip active" data-filter="all">All</button>
+  <button class="chip priority-chip" data-filter="🔴">🔴 High</button>
+  <button class="chip priority-chip" data-filter="🟠">🟠 Medium</button>
+  <button class="chip priority-chip" data-filter="🟡">🟡 Low</button>
+  <button class="chip priority-chip" data-filter="⚠️">⚠️ Unclassified</button>
   <select id="categoryFilter" class="chip" style="cursor:pointer; font-weight:600; color:var(--slate); appearance:auto;">
     <option value="all">All Categories</option>
     <option value="Political Representation">Political Representation</option>
@@ -700,9 +700,9 @@ function categoryBadge(cat) {
   return `<span class="cat-badge" style="background:${color}1A; color:${color};">${escapeHtml(cat)}</span>`;
 }
 
-document.querySelectorAll('.chip').forEach(chip => {
+document.querySelectorAll('.priority-chip').forEach(chip => {
   chip.addEventListener('click', () => {
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.priority-chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     activeFilter = chip.dataset.filter;
     render();
@@ -760,12 +760,17 @@ function renderArchive() {
     }
   });
 
-  // Group the deduped reports by year (Publication Date first, fall back to Year field)
+  // Group the deduped reports by year (Publication Date first, fall back to Year field).
+  // 2027 is excluded — those are edition years for reports not yet actually
+  // published, just referenced ahead of time in search results. "Undated" is
+  // excluded too, since a report with no determinable date isn't useful in a
+  // year-organized archive.
   const byYear = {};
   byReport.forEach(r => {
     const pubDate = r['Publication Date'] || '';
     const yearMatch = pubDate.match(/\d{4}/);
     const year = yearMatch ? yearMatch[0] : (r['Year'] || 'Undated');
+    if (year === '2027' || year === 'Undated') return;
     if (!byYear[year]) byYear[year] = [];
     byYear[year].push(r);
   });
