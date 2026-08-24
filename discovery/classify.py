@@ -52,10 +52,18 @@ For each result also extract, if visible from the title/snippet:
   - year: the edition/reference year the report itself covers, if identifiable, \
 else null (this may differ from any year mentioned only because of when an \
 article about it was published)
-  - publication_date: the most precise publication date you can determine from \
-the title/snippet — a full date if stated (e.g. "2026-03-14"), otherwise a \
-month and year if that's the most precise available (e.g. "March 2026"), \
-otherwise just the year (e.g. "2026"), otherwise null if genuinely undeterminable. \
+  - publication_date: the publication date of the SPECIFIC PAGE this result's \
+URL points to — not the report's edition year. Two cases:
+      1. If the URL is the report's own official page (the publishing \
+         organisation's own site, e.g. weforum.org, imd.org, worldbank.org), \
+         give that report's own stated publish/release date.
+      2. If the URL is a secondary source about the report — a news article, \
+         or a Facebook/Instagram/LinkedIn/X post — give the date THAT \
+         article or post was published/posted, not the underlying report's \
+         date (which may be different and isn't what this field is for).
+    Give the most precise value available: a full date if stated (e.g. \
+"2026-03-14"), otherwise month + year (e.g. "March 2026"), otherwise just \
+the year, otherwise null if genuinely undeterminable from the snippet. \
 Never guess a date not implied by the text.
   - category: classify the report into EXACTLY ONE of these 8 categories, \
 choosing the single best fit even if the report could arguably touch more \
