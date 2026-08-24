@@ -85,6 +85,7 @@ def main():
             item["report_type"] = None
             item["year"] = None
             item["publication_date"] = None
+            item["source_type"] = "Secondary"
             item["category"] = "Other"
             classified.append(item)
     else:

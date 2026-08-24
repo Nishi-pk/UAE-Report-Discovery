@@ -65,6 +65,11 @@ URL points to — not the report's edition year. Two cases:
 "2026-03-14"), otherwise month + year (e.g. "March 2026"), otherwise just \
 the year, otherwise null if genuinely undeterminable from the snippet. \
 Never guess a date not implied by the text.
+  - source_type: "Official" if the URL is the report's own publisher's page \
+(the organisation's own domain, e.g. weforum.org for a WEF report, imd.org \
+for an IMD report) — "Secondary" if it's a news article, or a social post on \
+Facebook, Instagram, LinkedIn, X/Twitter, TikTok, or YouTube reporting ON the \
+report rather than being the report's own page.
   - category: classify the report into EXACTLY ONE of these 8 categories, \
 choosing the single best fit even if the report could arguably touch more \
 than one:
@@ -98,6 +103,7 @@ order as given, with this exact shape and no other text:
     "report_type": "string or null",
     "year": "string or null",
     "publication_date": "string or null",
+    "source_type": "Official" or "Secondary",
     "category": "one of the 8 categories above, or 'Other'",
     "reasoning": "one short sentence"
   }}
@@ -190,6 +196,7 @@ def classify_all(
                 merged["report_type"] = c.get("report_type")
                 merged["year"] = c.get("year")
                 merged["publication_date"] = c.get("publication_date")
+                merged["source_type"] = c.get("source_type") or "Secondary"
                 merged["category"] = c.get("category") or "Other"
                 merged["reasoning"] = c.get("reasoning")
             else:
@@ -203,6 +210,7 @@ def classify_all(
                 merged["report_type"] = None
                 merged["year"] = None
                 merged["publication_date"] = None
+                merged["source_type"] = "Secondary"  # default to the safer assumption on failure
                 merged["category"] = "Other"
                 merged["reasoning"] = "Classification failed; needs manual review."
             enriched.append(merged)
@@ -241,11 +249,18 @@ the report name / organisation / UAE mention / year given — a full date if
 somehow implied, otherwise month+year, otherwise just the year, otherwise
 null if genuinely undeterminable. Never guess a date not implied by the input.
 
+Also provide source_type: "Official" if the SOURCE URL's domain is the
+publishing organisation's own site (e.g. weforum.org for a WEF report), or
+"Secondary" if the URL is a news site, or Facebook/Instagram/LinkedIn/X/
+TikTok/YouTube — anything reporting ON the report rather than being the
+report's own page. Compare the URL's domain against the given ORGANISATION
+name to judge this.
+
 Respond with ONLY a JSON array, one object per input item, in the same order
 given, with this exact shape and no other text:
 
 [
-  {"index": 0, "category": "one of the 8 categories above, or 'Other'", "publication_date": "string or null"}
+  {"index": 0, "category": "one of the 8 categories above, or 'Other'", "publication_date": "string or null", "source_type": "Official" or "Secondary"}
 ]
 """
 
@@ -289,7 +304,7 @@ def backfill_all(rows: List[Dict[str, Any]], batch_size: int = 10, sleep_seconds
     Rows that already have a Category are left untouched and not re-billed.
     """
     client = _client()
-    to_process = [(i, r) for i, r in enumerate(rows) if not r.get("Category")]
+    to_process = [(i, r) for i, r in enumerate(rows) if not r.get("Category") or not r.get("Source Type")]
     print(f"[backfill] {len(to_process)} rows need backfilling (out of {len(rows)} total)")
 
     updated_count = 0
@@ -304,9 +319,11 @@ def backfill_all(rows: List[Dict[str, Any]], batch_size: int = 10, sleep_seconds
             if result:
                 rows[global_i]["Category"] = result.get("category") or "Other"
                 rows[global_i]["Publication Date"] = result.get("publication_date") or ""
+                rows[global_i]["Source Type"] = result.get("source_type") or "Secondary"
                 updated_count += 1
             else:
                 rows[global_i]["Category"] = "Other"  # mark as attempted, avoid infinite re-tries
+                rows[global_i]["Source Type"] = "Secondary"
 
         print(f"[backfill] {min(start + batch_size, len(to_process))}/{len(to_process)} done")
         time.sleep(sleep_seconds)
