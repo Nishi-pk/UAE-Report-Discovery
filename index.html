@@ -247,6 +247,15 @@
   }
   .source-link:hover { color: var(--gold); }
 
+  .cat-badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
   .badge {
     display: inline-block;
     padding: 3px 10px;
@@ -361,6 +370,18 @@
   <button class="chip" data-filter="🟠">🟠 Medium</button>
   <button class="chip" data-filter="🟡">🟡 Low</button>
   <button class="chip" data-filter="⚠️">⚠️ Unclassified</button>
+  <select id="categoryFilter" class="chip" style="cursor:pointer; font-weight:600; color:var(--slate); appearance:auto;">
+    <option value="all">All Categories</option>
+    <option value="Political Representation">Political Representation</option>
+    <option value="Economic and Workforce">Economic and Workforce</option>
+    <option value="Legal Rights and Freedom">Legal Rights and Freedom</option>
+    <option value="Financial and Business Rights">Financial and Business Rights</option>
+    <option value="Family, Maternity and Pension">Family, Maternity and Pension</option>
+    <option value="Education">Education</option>
+    <option value="Health">Health</option>
+    <option value="Technology">Technology</option>
+    <option value="Other">Other</option>
+  </select>
   <span class="result-count" id="resultCount"></span>
 </div>
 
@@ -372,6 +393,8 @@
         <th data-key="report">Report</th>
         <th data-key="source">Source</th>
         <th data-key="mention">UAE Mention</th>
+        <th data-key="category">Category</th>
+        <th data-key="pubdate">Published</th>
         <th data-key="date">Found <span class="arrow">▾</span></th>
         <th data-key="status">Status</th>
         <th></th>
@@ -432,6 +455,7 @@ let allRows = [];
 let sortKey = 'priority';
 let sortDir = 1;
 let activeFilter = 'all';
+let activeCategory = 'all';
 
 const priorityOrder = { '🔴': 0, '🟠': 1, '🟡': 2, '⚠️': 3 };
 const priorityClass = { '🔴': 'high', '🟠': 'medium', '🟡': 'low', '⚠️': 'unclass' };
@@ -487,6 +511,7 @@ function render() {
 
   let rows = allRows.filter(r => {
     if (activeFilter !== 'all' && getPriorityEmoji(r.Priority) !== activeFilter) return false;
+    if (activeCategory !== 'all' && (r['Category'] || '') !== activeCategory) return false;
     const q = document.getElementById('searchBox').value.toLowerCase();
     if (!q) return true;
     return (r.Report || '').toLowerCase().includes(q)
@@ -508,6 +533,12 @@ function render() {
     } else if (sortKey === 'source') {
       av = (a.Source || '').toLowerCase();
       bv = (b.Source || '').toLowerCase();
+    } else if (sortKey === 'category') {
+      av = (a['Category'] || '').toLowerCase();
+      bv = (b['Category'] || '').toLowerCase();
+    } else if (sortKey === 'pubdate') {
+      av = a['Publication Date'] || '';
+      bv = b['Publication Date'] || '';
     } else {
       av = ''; bv = '';
     }
@@ -543,6 +574,8 @@ function render() {
         </td>
         <td class="source-col">${sourceLink(r.Source)}</td>
         <td class="mention">${escapeHtml(r['UAE Mention'] || '—')}</td>
+        <td>${categoryBadge(r['Category'])}</td>
+        <td class="date-col">${escapeHtml(r['Publication Date'] || '—')}</td>
         <td class="date-col">${escapeHtml(r['Date Found'] || '')}</td>
         <td>${escapeHtml(r.Status || '')}</td>
         <td>
@@ -570,6 +603,24 @@ function sourceLink(url) {
   return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener" class="source-link">${escapeHtml(domain)}</a>`;
 }
 
+const CATEGORY_COLORS = {
+  'Political Representation': '#6B5B95',
+  'Economic and Workforce': '#2E7D6B',
+  'Legal Rights and Freedom': '#8B4A4A',
+  'Financial and Business Rights': '#B8912F',
+  'Family, Maternity and Pension': '#C2679A',
+  'Education': '#3A6B9C',
+  'Health': '#4A8B6F',
+  'Technology': '#4A5B8B',
+  'Other': '#8B93A0',
+};
+
+function categoryBadge(cat) {
+  if (!cat) return '<span style="color:#8B93A0;">—</span>';
+  const color = CATEGORY_COLORS[cat] || '#8B93A0';
+  return `<span class="cat-badge" style="background:${color}1A; color:${color};">${escapeHtml(cat)}</span>`;
+}
+
 document.querySelectorAll('.chip').forEach(chip => {
   chip.addEventListener('click', () => {
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
@@ -580,6 +631,11 @@ document.querySelectorAll('.chip').forEach(chip => {
 });
 
 document.getElementById('searchBox').addEventListener('input', render);
+
+document.getElementById('categoryFilter').addEventListener('change', (e) => {
+  activeCategory = e.target.value;
+  render();
+});
 
 document.querySelectorAll('thead th[data-key]').forEach(th => {
   th.addEventListener('click', () => {

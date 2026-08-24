@@ -84,6 +84,8 @@ def main():
             item["uae_mention"] = None
             item["report_type"] = None
             item["year"] = None
+            item["publication_date"] = None
+            item["category"] = "Other"
             classified.append(item)
     else:
         print("[main] classifying with Claude...")

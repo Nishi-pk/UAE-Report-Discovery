@@ -49,7 +49,33 @@ For each result also extract, if visible from the title/snippet:
 "UAE included, no score visible", "UAE mentioned only")
   - report_type: one of "Index", "Ranking", "Report", "Survey", "Benchmark", \
 "Other"
-  - year: the year the report/edition refers to, if identifiable, else null
+  - year: the edition/reference year the report itself covers, if identifiable, \
+else null (this may differ from any year mentioned only because of when an \
+article about it was published)
+  - publication_date: the most precise publication date you can determine from \
+the title/snippet — a full date if stated (e.g. "2026-03-14"), otherwise a \
+month and year if that's the most precise available (e.g. "March 2026"), \
+otherwise just the year (e.g. "2026"), otherwise null if genuinely undeterminable. \
+Never guess a date not implied by the text.
+  - category: classify the report into EXACTLY ONE of these 8 categories, \
+choosing the single best fit even if the report could arguably touch more \
+than one:
+      "Political Representation" — governance, elections, government \
+      effectiveness, public trust in government, rule of law, political \
+      participation
+      "Economic and Workforce" — GDP, growth, competitiveness, labor market, \
+      employment, entrepreneurship, trade, investment climate
+      "Legal Rights and Freedom" — civil liberties, press freedom, judicial \
+      systems, corruption, human rights
+      "Financial and Business Rights" — banking, credit ratings, financial \
+      centres, business regulation, property/ownership rights
+      "Family, Maternity and Pension" — family policy, maternity/parental \
+      leave, gender balance, retirement/pension systems, social protection
+      "Education" — schools, universities, rankings, skills, literacy
+      "Health" — healthcare systems, public health, wellbeing, life expectancy
+      "Technology" — AI, digital transformation, innovation, R&D, smart cities, \
+      telecom, cybersecurity
+      If truly none fit, use "Other".
 
 Respond with ONLY a JSON array, one object per input result, in the same \
 order as given, with this exact shape and no other text:
@@ -63,6 +89,8 @@ order as given, with this exact shape and no other text:
     "uae_mention": "string or null",
     "report_type": "string or null",
     "year": "string or null",
+    "publication_date": "string or null",
+    "category": "one of the 8 categories above, or 'Other'",
     "reasoning": "one short sentence"
   }}
 ]
@@ -153,6 +181,8 @@ def classify_all(
                 merged["uae_mention"] = c.get("uae_mention")
                 merged["report_type"] = c.get("report_type")
                 merged["year"] = c.get("year")
+                merged["publication_date"] = c.get("publication_date")
+                merged["category"] = c.get("category") or "Other"
                 merged["reasoning"] = c.get("reasoning")
             else:
                 # classification failed for this item — default to low priority
@@ -164,6 +194,8 @@ def classify_all(
                 merged["uae_mention"] = None
                 merged["report_type"] = None
                 merged["year"] = None
+                merged["publication_date"] = None
+                merged["category"] = "Other"
                 merged["reasoning"] = "Classification failed; needs manual review."
             enriched.append(merged)
 
