@@ -1,0 +1,9 @@
+{
+  "name": "uae-report-discovery-brief-builder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PPTX brief generation for the UAE Report Discovery pipeline",
+  "dependencies": {
+    "pptxgenjs": "^3.12.0"
+  }
+}

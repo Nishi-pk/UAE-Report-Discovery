@@ -1,0 +1,57 @@
+name: Generate Brief
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_name:
+        description: "Report name"
+        required: true
+      source_url:
+        description: "Official source URL"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Draft brief content
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -u -m discovery.generate_brief \
+            --report-name "${{ github.event.inputs.report_name }}" \
+            --source-url "${{ github.event.inputs.source_url }}" \
+            --output brief_content.json
+
+      - name: Build PPTX
+        run: node discovery/build_pptx.js brief_content.json brief_output.pptx
+
+      - name: Upload brief as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: brief
+          path: brief_output.pptx
+          retention-days: 7

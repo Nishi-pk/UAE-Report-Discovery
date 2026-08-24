@@ -354,6 +354,9 @@
     cursor: pointer;
   }
   .brief-btn[data-enabled="true"]:hover { background: var(--gold); color: white; }
+  .brief-btn.working { cursor: wait; opacity: 0.7; }
+  .brief-btn.done { border-color: #2E7D6B; color: #2E7D6B; }
+  .brief-btn.failed { border-color: var(--high); color: var(--high); }
 
   .date-col { color: var(--slate); font-size: 12.5px; white-space: nowrap; }
 
@@ -635,13 +638,16 @@ function render() {
     return;
   }
 
-  tbody.innerHTML = rows.map(r => {
+  tbody.innerHTML = rows.map((r, idx) => {
     const emoji = getPriorityEmoji(r.Priority);
     const cls = priorityClass[emoji];
     const word = priorityWord[emoji];
-    const isHigh = emoji === '🔴';
+    const isOfficial = (r['Source Type'] || '').trim() === 'Official';
     const trackedTag = (r['Already Tracked'] === 'Yes')
       ? '<div class="tracked-tag">Already tracked</div>' : '';
+    const rowId = `brief-btn-${idx}`;
+    const reportName = escapeAttr(r.Report || '');
+    const sourceUrl = escapeAttr(r.Source || '');
     return `
       <tr>
         <td><span class="badge ${cls}">${emoji} ${word}</span></td>
@@ -656,8 +662,11 @@ function render() {
         <td class="date-col">${escapeHtml(r['Publication Date'] || '—')}</td>
         <td class="date-col">${escapeHtml(r['Date Found'] || '')}</td>
         <td>
-          <button class="brief-btn" data-enabled="false" title="Coming soon">
-            ${isHigh ? 'Generate Brief' : '—'}
+          <button id="${rowId}" class="brief-btn" data-enabled="${isOfficial}"
+            data-report="${reportName}" data-url="${sourceUrl}"
+            title="${isOfficial ? 'Generate a PPTX brief from the official report page' : 'Only available for reports found on their own official page'}"
+            ${isOfficial ? `onclick="handleGenerateBrief('${rowId}')"` : 'disabled'}>
+            ${isOfficial ? 'Generate Brief' : '—'}
           </button>
         </td>
       </tr>`;
@@ -802,6 +811,175 @@ function renderArchive() {
 }
 
 loadData();
+
+// --- Generate Brief: token handling, dispatch, poll, auto-download ---------
+// NOTE: this talks to GitHub's API from your browser. Your token is only
+// ever stored in this browser's localStorage — never sent anywhere except
+// GitHub's own API.
+const GH_OWNER = 'Nishi-pk';
+const GH_REPO = 'UAE-Report-Discovery';
+const GH_WORKFLOW = 'generate_brief.yml';
+const TOKEN_KEY = 'uae_discovery_gh_token';
+
+function getStoredToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function promptForToken() {
+  const token = prompt(
+    'One-time setup: paste a GitHub personal access token (repo + workflow scope).\n' +
+    'This is stored only in this browser and used only to talk to GitHub on your behalf.'
+  );
+  if (token && token.trim()) {
+    localStorage.setItem(TOKEN_KEY, token.trim());
+    return token.trim();
+  }
+  return null;
+}
+
+function setButtonState(rowId, state, label) {
+  const btn = document.getElementById(rowId);
+  if (!btn) return;
+  btn.classList.remove('working', 'done', 'failed');
+  if (state) btn.classList.add(state);
+  btn.textContent = label;
+}
+
+async function ghFetch(url, token, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'Authorization': `token ${token}`,
+      'Accept': 'application/vnd.github+json',
+      ...(options.headers || {}),
+    },
+  });
+  return res;
+}
+
+async function handleGenerateBrief(rowId) {
+  const btn = document.getElementById(rowId);
+  if (!btn || btn.dataset.enabled !== 'true') return;
+
+  let token = getStoredToken();
+  if (!token) {
+    token = promptForToken();
+    if (!token) return; // user cancelled
+  }
+
+  const reportName = btn.dataset.report;
+  const sourceUrl = btn.dataset.url;
+
+  setButtonState(rowId, 'working', 'Starting…');
+
+  try {
+    const dispatchTime = new Date();
+
+    // 1. Trigger the workflow
+    const dispatchRes = await ghFetch(
+      `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${GH_WORKFLOW}/dispatches`,
+      token,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ref: 'main',
+          inputs: { report_name: reportName, source_url: sourceUrl },
+        }),
+      }
+    );
+
+    if (dispatchRes.status === 401 || dispatchRes.status === 403) {
+      localStorage.removeItem(TOKEN_KEY); // bad/expired token — clear it so next click re-prompts
+      throw new Error('GitHub rejected the token (401/403). It may be expired or missing scope — try again to re-enter it.');
+    }
+    if (!dispatchRes.ok) {
+      throw new Error(`Failed to start (HTTP ${dispatchRes.status})`);
+    }
+
+    setButtonState(rowId, 'working', 'Finding run…');
+
+    // 2. Find the run that was just created (workflow_dispatch doesn't return a run ID directly)
+    let runId = null;
+    for (let attempt = 0; attempt < 10 && !runId; attempt++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const runsRes = await ghFetch(
+        `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${GH_WORKFLOW}/runs?event=workflow_dispatch&per_page=5`,
+        token
+      );
+      if (!runsRes.ok) continue;
+      const runsData = await runsRes.json();
+      const match = (runsData.workflow_runs || []).find(run => {
+        const createdAt = new Date(run.created_at);
+        return createdAt >= new Date(dispatchTime.getTime() - 10000); // 10s clock-skew buffer
+      });
+      if (match) runId = match.id;
+    }
+
+    if (!runId) {
+      throw new Error('Could not find the started run — check the Actions tab manually.');
+    }
+
+    setButtonState(rowId, 'working', 'Generating…');
+
+    // 3. Poll until the run completes
+    let conclusion = null;
+    for (let attempt = 0; attempt < 60 && conclusion === null; attempt++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const runRes = await ghFetch(
+        `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/runs/${runId}`,
+        token
+      );
+      if (!runRes.ok) continue;
+      const runData = await runRes.json();
+      if (runData.status === 'completed') {
+        conclusion = runData.conclusion;
+      }
+    }
+
+    if (conclusion !== 'success') {
+      throw new Error(`Run finished with status: ${conclusion || 'timed out'} — check the Actions tab for details.`);
+    }
+
+    setButtonState(rowId, 'working', 'Downloading…');
+
+    // 4. Find and download the artifact (GitHub always zips artifacts — this
+    // will be a .zip containing the .pptx, not the .pptx directly)
+    const artifactsRes = await ghFetch(
+      `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/runs/${runId}/artifacts`,
+      token
+    );
+    if (!artifactsRes.ok) throw new Error('Could not list artifacts.');
+    const artifactsData = await artifactsRes.json();
+    const artifact = (artifactsData.artifacts || [])[0];
+    if (!artifact) throw new Error('No artifact found on the completed run.');
+
+    const downloadRes = await ghFetch(
+      `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/artifacts/${artifact.id}/zip`,
+      token
+    );
+    if (!downloadRes.ok) throw new Error('Could not download the artifact.');
+
+    const blob = await downloadRes.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `${reportName.replace(/[^a-z0-9]+/gi, '_')}_brief.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+
+    setButtonState(rowId, 'done', 'Downloaded ✓');
+    setTimeout(() => setButtonState(rowId, '', 'Generate Brief'), 4000);
+
+  } catch (err) {
+    console.error('[generate brief]', err);
+    setButtonState(rowId, 'failed', 'Failed — retry');
+    setTimeout(() => setButtonState(rowId, '', 'Generate Brief'), 4000);
+    alert(`Brief generation failed: ${err.message}`);
+  }
+}
 </script>
 
 </body>
