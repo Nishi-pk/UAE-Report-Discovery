@@ -1,0 +1,37 @@
+name: Backfill Categories
+
+on:
+  workflow_dispatch: {}   # manual trigger only — this isn't a daily job
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backfill
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: python -u -m discovery.backfill
+
+      - name: Commit updated inbox
+        run: |
+          git config user.name "uae-report-discovery-bot"
+          git config user.email "actions@github.com"
+          git add data/discovery_inbox.csv
+          git diff --staged --quiet || git commit -m "Backfill: categories and publication dates"
+          git pull --rebase --autostash origin main
+          git push

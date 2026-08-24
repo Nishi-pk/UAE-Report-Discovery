@@ -203,3 +203,104 @@ def classify_all(
         time.sleep(sleep_seconds)
 
     return enriched
+
+
+BACKFILL_SYSTEM_PROMPT = """You are helping categorize already-reviewed reports \
+for the UAE's Federal Competitiveness and Statistics Centre (FCSC). Each item \
+below already has a report name, organisation, and a short description of how \
+the UAE is mentioned — your only job is to assign a category and, if possible, \
+a publication date.
+
+Classify each item into EXACTLY ONE of these 8 categories:
+  "Political Representation" — governance, elections, government effectiveness,
+  public trust in government, rule of law, political participation
+  "Economic and Workforce" — GDP, growth, competitiveness, labor market,
+  employment, entrepreneurship, trade, investment climate
+  "Legal Rights and Freedom" — civil liberties, press freedom, judicial
+  systems, corruption, human rights
+  "Financial and Business Rights" — banking, credit ratings, financial
+  centres, business regulation, property/ownership rights
+  "Family, Maternity and Pension" — family policy, maternity/parental leave,
+  gender balance, retirement/pension systems, social protection
+  "Education" — schools, universities, rankings, skills, literacy
+  "Health" — healthcare systems, public health, wellbeing, life expectancy
+  "Technology" — AI, digital transformation, innovation, R&D, smart cities,
+  telecom, cybersecurity
+  If truly none fit, use "Other".
+
+Also provide publication_date: the most precise date you can determine from
+the report name / organisation / UAE mention / year given — a full date if
+somehow implied, otherwise month+year, otherwise just the year, otherwise
+null if genuinely undeterminable. Never guess a date not implied by the input.
+
+Respond with ONLY a JSON array, one object per input item, in the same order
+given, with this exact shape and no other text:
+
+[
+  {"index": 0, "category": "one of the 8 categories above, or 'Other'", "publication_date": "string or null"}
+]
+"""
+
+
+def _build_backfill_prompt(items_batch: List[Dict[str, Any]]) -> str:
+    lines = []
+    for i, r in enumerate(items_batch):
+        lines.append(
+            f'{i}. REPORT: {r.get("Report", "")}\n'
+            f'   ORGANISATION: {r.get("Organisation", "")}\n'
+            f'   UAE MENTION: {r.get("UAE Mention", "")}\n'
+            f'   YEAR: {r.get("Year", "")}\n'
+            f'   SOURCE: {r.get("Source", "")}'
+        )
+    return "Categorize these already-reviewed items:\n\n" + "\n\n".join(lines)
+
+
+def backfill_batch(items_batch: List[Dict[str, Any]], client: anthropic.Anthropic) -> List[Dict[str, Any]]:
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=1500,
+        system=BACKFILL_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": _build_backfill_prompt(items_batch)}],
+    )
+    text = "".join(block.text for block in response.content if block.type == "text").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text.replace("json\n", "", 1) if text.startswith("json\n") else text
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        print("[backfill] failed to parse model output, skipping batch:")
+        print(text[:500])
+        return []
+
+
+def backfill_all(rows: List[Dict[str, Any]], batch_size: int = 10, sleep_seconds: float = 0.5) -> int:
+    """
+    Fills in Category and Publication Date for rows that are missing them,
+    modifying `rows` in place. Returns the count of rows successfully updated.
+    Rows that already have a Category are left untouched and not re-billed.
+    """
+    client = _client()
+    to_process = [(i, r) for i, r in enumerate(rows) if not r.get("Category")]
+    print(f"[backfill] {len(to_process)} rows need backfilling (out of {len(rows)} total)")
+
+    updated_count = 0
+    for start in range(0, len(to_process), batch_size):
+        batch = to_process[start:start + batch_size]
+        batch_items = [r for _, r in batch]
+        results = backfill_batch(batch_items, client)
+        result_by_index = {r["index"]: r for r in results}
+
+        for local_i, (global_i, row) in enumerate(batch):
+            result = result_by_index.get(local_i)
+            if result:
+                rows[global_i]["Category"] = result.get("category") or "Other"
+                rows[global_i]["Publication Date"] = result.get("publication_date") or ""
+                updated_count += 1
+            else:
+                rows[global_i]["Category"] = "Other"  # mark as attempted, avoid infinite re-tries
+
+        print(f"[backfill] {min(start + batch_size, len(to_process))}/{len(to_process)} done")
+        time.sleep(sleep_seconds)
+
+    return updated_count
