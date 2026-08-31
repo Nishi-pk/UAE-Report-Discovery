@@ -752,12 +752,19 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // --- Archive: one entry per unique report name, grouped by year -----------
 function renderArchive() {
-  // Prefer 🔴 High priority source when the same report has multiple rows;
-  // otherwise keep the first one encountered.
+  const currentYear = new Date().getFullYear(); // dynamic — moves forward automatically each January
+
+  // Step 1: keep only reports sourced from their own official page — no
+  // news articles, no social media posts about the report.
+  const officialRows = allRows.filter(r => (r['Source Type'] || '').trim() === 'Official');
+
+  // Step 2: dedupe by report name (a report can still have multiple official
+  // rows in rare cases — e.g. found via two different official URLs).
+  // Prefer 🔴 High priority when duplicates exist.
   const byReport = new Map();
   const priorityRank = { '🔴': 0, '🟠': 1, '🟡': 2, '⚠️': 3 };
 
-  allRows.forEach(r => {
+  officialRows.forEach(r => {
     const name = (r.Report || '').trim();
     if (!name) return;
     const existing = byReport.get(name);
@@ -767,17 +774,24 @@ function renderArchive() {
     }
   });
 
-  // Group the deduped reports by year (Publication Date first, fall back to Year field).
-  // 2027 is excluded — those are edition years for reports not yet actually
-  // published, just referenced ahead of time in search results. "Undated" is
-  // excluded too, since a report with no determinable date isn't useful in a
-  // year-organized archive.
+  // Step 3: group by year (Publication Date first, fall back to Year field).
+  // Exclude anything undated, and exclude any year beyond the current one —
+  // this check is dynamic (uses today's real year), so it naturally starts
+  // showing 2027 the moment 2027 actually begins, with no manual update needed.
   const byYear = {};
   byReport.forEach(r => {
     const pubDate = r['Publication Date'] || '';
-    const yearMatch = pubDate.match(/\d{4}/);
-    const year = yearMatch ? yearMatch[0] : (r['Year'] || 'Undated');
-    if (year === '2027' || year === 'Undated') return;
+    const pubMatch = pubDate.match(/\d{4}/);
+    let year;
+    if (pubMatch) {
+      year = pubMatch[0];
+    } else {
+      const yearField = r['Year'] || '';
+      const yearFieldMatch = yearField.match(/\d{4}/); // handles odd values like "2025/2026"
+      year = yearFieldMatch ? yearFieldMatch[0] : 'Undated';
+    }
+    if (year === 'Undated') return;
+    if (parseInt(year, 10) > currentYear) return;
     if (!byYear[year]) byYear[year] = [];
     byYear[year].push(r);
   });
