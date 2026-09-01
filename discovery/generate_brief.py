@@ -76,6 +76,11 @@ but do not compute an average for that group — label it as insufficient \
 data instead. If zero members of a group are found, omit that group \
 entirely rather than including it empty.
 
+When computing an average, do the arithmetic silently — do not write out the \
+addition or division in your response text. Only the final computed number \
+should appear, inside the JSON "average" field. Showing your work wastes \
+space needed for the actual response.
+
 Once you've fetched what you need, respond with ONLY a JSON object (no \
 other text, no markdown fences) with this exact shape:
 
@@ -139,7 +144,7 @@ def draft_brief_content(report_name: str, source_url: str) -> dict:
     for turn in range(4):
         response = client.messages.create(
             model=MODEL,
-            max_tokens=4000,
+            max_tokens=8000,
             system=DRAFT_SYSTEM_PROMPT,
             messages=messages,
             tools=tools,
@@ -172,6 +177,18 @@ def draft_brief_content(report_name: str, source_url: str) -> dict:
     try:
         content = json.loads(text)
     except json.JSONDecodeError as e:
+        # Rescue attempt: sometimes a little stray text sneaks in before/after
+        # the JSON object even when told not to. Try pulling out just the
+        # {...} portion before giving up entirely.
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                content = json.loads(text[start:end + 1])
+                print("[generate_brief] recovered JSON after trimming stray surrounding text")
+                return content
+            except json.JSONDecodeError:
+                pass
         print("[generate_brief] failed to parse Claude's response as JSON:")
         print(text[:1500])
         raise RuntimeError(f"Could not parse brief content: {e}")
