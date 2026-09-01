@@ -1,8 +1,20 @@
 """
-generate_brief.py — given a report name and its official source URL, fetches
-the page, has Claude draft structured brief content (identification, UAE
-ranking, benchmark comparison, methodology, summary), and writes that
-content as JSON for build_pptx.js to turn into an actual .pptx.
+generate_brief.py — given a report name and its official source URL, uses
+Claude's own web_fetch and web_search tools (server-side, executed by
+Anthropic) to actually read the report's page — and follow links to a
+methodology page or PDF if one exists — then draft structured brief
+content. Writes that content as JSON for build_pptx.js to turn into an
+actual .pptx.
+
+This replaced an earlier version that did a single manual requests.get()
+call with crude regex tag-stripping. That approach couldn't follow links,
+couldn't verify anything, and returned an empty/wrong page for any site
+that loads its real data via JavaScript after the initial page load. Using
+Claude's own tools here means Claude does the actual navigating — reading
+the page, deciding whether to fetch a linked methodology page, and only
+falling back to a web search if something genuinely needs verifying —
+much closer to how a person (or Claude in a normal chat) would work
+through the same page by hand.
 
 Usage:
     python -m discovery.generate_brief --report-name "Henley Passport Index" \
@@ -16,15 +28,30 @@ import os
 import sys
 
 import anthropic
-import requests
 
 MODEL = "claude-sonnet-4-6"
+WEB_FETCH_BETA_HEADER = "web-fetch-2025-09-10"
 
 DRAFT_SYSTEM_PROMPT = """You are drafting a short executive brief for the UAE's \
-Federal Competitiveness and Statistics Centre (FCSC), based on the actual \
-content of a report's official page (provided below). Extract only what is \
-genuinely present in the page content — never invent a ranking, score, \
-methodology detail, or comparison figure that isn't actually stated.
+Federal Competitiveness and Statistics Centre (FCSC). You have web_fetch and \
+web_search tools available — use them to actually read the report's real \
+page content before writing anything. Extract only what is genuinely \
+present in what you fetch — never invent a ranking, score, methodology \
+detail, or comparison figure that isn't actually stated somewhere you \
+fetched.
+
+How to use your tools on this task:
+  1. Start by fetching the SOURCE URL you're given — that's the report's \
+official page.
+  2. If that page references a separate methodology page, a full report \
+PDF, or a detailed data page on the SAME site, fetch that too if it looks \
+like it would meaningfully improve the brief (e.g. it has the actual \
+ranking table or methodology explanation the summary page lacks).
+  3. Only use web_search if something specific genuinely needs verifying \
+and isn't resolved by what you've already fetched — do not use it to go \
+looking for unrelated sources. Stay focused on this one report.
+  4. Do not fetch or cite anything outside the report's own official \
+domain family — no news articles, no social media, for this task.
 
 FCSC's standard benchmark groups are:
   G7: Canada, France, Germany, Italy, Japan, United Kingdom, United States
@@ -36,9 +63,9 @@ expansion) Egypt, Ethiopia, Iran, and the United Arab Emirates — note the \
 UAE is itself now a BRICS member, so BRICS comparisons should note this \
 rather than list UAE as an external peer
 
-For each group, check the page content for any of that group's member \
+For each group, check what you fetched for any of that group's member \
 countries and their rank/score. Only include a country if it is explicitly \
-named with a rank or score in the page content — never estimate or infer a \
+named with a rank or score in what you fetched — never estimate or infer a \
 country's figure. For each group where at least one member's figure is \
 found, compute a simple average of the figures found IF they are the same \
 type of number (e.g. all ranks, or all scores on the same scale) — and \
@@ -49,13 +76,14 @@ but do not compute an average for that group — label it as insufficient \
 data instead. If zero members of a group are found, omit that group \
 entirely rather than including it empty.
 
-Produce a JSON object with this exact shape:
+Once you've fetched what you need, respond with ONLY a JSON object (no \
+other text, no markdown fences) with this exact shape:
 
 {
   "report_name": "clean official name of the report/index",
   "organisation": "publishing organisation",
   "edition_year": "the report edition/year, if stated",
-  "uae_headline": "one sentence: UAE's specific rank/score, as stated on the page",
+  "uae_headline": "one sentence: UAE's specific rank/score, as stated in what you fetched",
   "benchmark_groups": [
     {
       "group": "G7" | "G20" | "BRICS",
@@ -67,38 +95,19 @@ Produce a JSON object with this exact shape:
 or 'Insufficient data for a group average — individual figures shown' or \
 'UAE is itself a BRICS member as of 2024'"
     }
-    // include only groups where at least one member was found
   ],
   "methodology_summary": "2-4 sentences on how the index/ranking is built, \
-ONLY if the page actually describes this. If not described on the page, \
-use exactly: 'Methodology not detailed on the source page.'",
+ONLY if a page you fetched actually describes this. If not described \
+anywhere you fetched, use exactly: 'Methodology not detailed on the source page.'",
   "key_findings": [
-    "2-4 short bullet-style findings actually stated on the page, beyond the \
-UAE headline — global trends, notable movers, etc."
+    "2-4 short bullet-style findings actually stated in what you fetched, \
+beyond the UAE headline — global trends, notable movers, etc."
   ],
   "summary": "one paragraph (3-5 sentences) summarizing the report and its \
-relevance to UAE competitiveness, in a neutral analytical tone."
+relevance to UAE competitiveness, in a neutral analytical tone.",
+  "sources_used": ["list of the actual URLs you fetched, for reference"]
 }
-
-Respond with ONLY the JSON object, no other text, no markdown fences.
 """
-
-
-def fetch_page_text(url: str, max_chars: int = 15000) -> str:
-    """Fetches a URL and returns a crude text extraction (strips HTML tags).
-    Not a full readability parser — good enough to hand to Claude, which is
-    tolerant of messy input, without pulling in a heavy dependency."""
-    resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    html = resp.text
-
-    # Crude tag stripping: good enough for feeding to Claude, not for display
-    import re
-    text = re.sub(r"<script.*?</script>", " ", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<style.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
 
 
 def draft_brief_content(report_name: str, source_url: str) -> dict:
@@ -107,24 +116,55 @@ def draft_brief_content(report_name: str, source_url: str) -> dict:
         raise RuntimeError("ANTHROPIC_API_KEY environment variable not set.")
     client = anthropic.Anthropic(api_key=api_key)
 
-    print(f"[generate_brief] fetching {source_url}")
-    page_text = fetch_page_text(source_url)
-    print(f"[generate_brief] fetched {len(page_text)} chars of page text")
-
     user_prompt = (
         f"REPORT NAME (as known): {report_name}\n"
-        f"SOURCE URL: {source_url}\n\n"
-        f"PAGE CONTENT:\n{page_text}"
+        f"SOURCE URL (fetch this first): {source_url}\n\n"
+        f"Fetch this page, follow up on a methodology/data page on the same "
+        f"site if it would genuinely help, then draft the brief content as "
+        f"specified."
     )
 
-    print("[generate_brief] drafting brief content with Claude...")
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=2000,
-        system=DRAFT_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    text = "".join(block.text for block in response.content if block.type == "text").strip()
+    messages = [{"role": "user", "content": user_prompt}]
+    tools = [
+        {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 5},
+        {"type": "web_search_20250305", "name": "web_search", "max_uses": 2},
+    ]
+
+    print(f"[generate_brief] asking Claude to fetch and analyze {source_url}")
+
+    final_text = None
+    # Server-executed tool tasks can occasionally pause and need a follow-up
+    # turn to continue — loop a few times in case that happens, rather than
+    # assuming one call always finishes the job.
+    for turn in range(4):
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            system=DRAFT_SYSTEM_PROMPT,
+            messages=messages,
+            tools=tools,
+            extra_headers={"anthropic-beta": WEB_FETCH_BETA_HEADER},
+        )
+
+        text_blocks = [block.text for block in response.content if block.type == "text"]
+        if text_blocks:
+            final_text = "".join(text_blocks).strip()
+
+        fetch_count = sum(1 for b in response.content if getattr(b, "type", "") == "server_tool_use")
+        print(f"[generate_brief] turn {turn + 1}: stop_reason={response.stop_reason}, "
+              f"{fetch_count} tool call(s) this turn")
+
+        if response.stop_reason != "pause_turn":
+            break
+
+        # Continue the conversation so Claude can finish its work
+        messages.append({"role": "assistant", "content": response.content})
+        messages.append({"role": "user", "content": "Please continue."})
+
+    if not final_text:
+        raise RuntimeError("Claude did not return any text content after fetching.")
+
+    text = final_text
     if text.startswith("```"):
         text = text.strip("`")
         text = text.replace("json\n", "", 1) if text.startswith("json\n") else text
@@ -133,7 +173,7 @@ def draft_brief_content(report_name: str, source_url: str) -> dict:
         content = json.loads(text)
     except json.JSONDecodeError as e:
         print("[generate_brief] failed to parse Claude's response as JSON:")
-        print(text[:1000])
+        print(text[:1500])
         raise RuntimeError(f"Could not parse brief content: {e}")
 
     return content
