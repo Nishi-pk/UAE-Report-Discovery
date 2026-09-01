@@ -2,12 +2,12 @@ name: UAE Report Discovery
 
 on:
   schedule:
-    # 06:07 Gulf Standard Time (UTC+4) = 02:07 UTC. Offset by 7 minutes from
-    # the exact hour deliberately — GitHub's own docs note that scheduled
-    # workflows are more likely to be delayed or skipped when set to fire
-    # right at the top of the hour, since that's when load across all of
-    # GitHub Actions peaks.
-    - cron: "7 2 * * *"
+    # 03:07 Gulf Standard Time (UTC+4) = 23:07 UTC the day before. Kept 7
+    # minutes off the exact hour deliberately — GitHub's own docs note that
+    # scheduled workflows are more likely to be delayed or skipped when set
+    # to fire right at the top of the hour, since that's when load across
+    # all of GitHub Actions peaks.
+    - cron: "7 23 * * *"
   workflow_dispatch:
     inputs:
       max_queries:
