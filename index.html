@@ -755,8 +755,17 @@ function renderArchive() {
   const currentYear = new Date().getFullYear(); // dynamic — moves forward automatically each January
 
   // Step 1: keep only reports sourced from their own official page — no
-  // news articles, no social media posts about the report.
-  const officialRows = allRows.filter(r => (r['Source Type'] || '').trim() === 'Official');
+  // news articles, no social media posts about the report — AND only rows
+  // actually typed as a report/index/ranking/survey/benchmark. "Official"
+  // alone isn't enough: a WEF meeting page, a WHO award listing, or a UN
+  // conference page is on the organisation's own domain too, but classify.py
+  // tags those Type = "Other" (or leaves it blank) rather than one of the
+  // real report types, so exclude those here.
+  const REPORT_TYPES = new Set(['index', 'ranking', 'report', 'survey', 'benchmark']);
+  const officialRows = allRows.filter(r =>
+    (r['Source Type'] || '').trim() === 'Official' &&
+    REPORT_TYPES.has((r['Type'] || '').trim().toLowerCase())
+  );
 
   // Step 2: dedupe by report name (a report can still have multiple official
   // rows in rare cases — e.g. found via two different official URLs).

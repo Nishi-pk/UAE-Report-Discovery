@@ -48,7 +48,17 @@ For each result also extract, if visible from the title/snippet:
   - uae_mention: short phrase describing UAE's mention (e.g. "UAE #31/140", \
 "UAE included, no score visible", "UAE mentioned only")
   - report_type: one of "Index", "Ranking", "Report", "Survey", "Benchmark", \
-"Other"
+"Other". Use "Index"/"Ranking"/"Report"/"Survey"/"Benchmark" ONLY when the \
+result is itself a published report/index/ranking/survey/benchmark document \
+or its dedicated results page. Use "Other" for anything else that isn't a \
+report at all, even if it's on a priority org's domain and even if \
+source_type is "Official" — e.g. a conference/event/forum page, a meeting \
+or summit listing, an organisation/partner directory entry, a "stories" or \
+blog article, an award or prize listing, a video/webcast page, a press \
+release, a training course, a treaty or member-state list, or a country \
+overview hub. Ask: "if I open this URL, do I land on a report/index I could \
+cite a rank or score from?" — if no, it's "Other" regardless of how \
+report-like the title sounds.
   - year: the edition/reference year the report itself covers, if identifiable, \
 else null (this may differ from any year mentioned only because of when an \
 article about it was published)
