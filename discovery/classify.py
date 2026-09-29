@@ -65,11 +65,33 @@ URL points to — not the report's edition year. Two cases:
 "2026-03-14"), otherwise month + year (e.g. "March 2026"), otherwise just \
 the year, otherwise null if genuinely undeterminable from the snippet. \
 Never guess a date not implied by the text.
-  - source_type: "Official" if the URL is the report's own publisher's page \
-(the organisation's own domain, e.g. weforum.org for a WEF report, imd.org \
-for an IMD report) — "Secondary" if it's a news article, or a social post on \
-Facebook, Instagram, LinkedIn, X/Twitter, TikTok, or YouTube reporting ON the \
-report rather than being the report's own page.
+  - source_type: "Official" ONLY if the URL is the actual report/index's own \
+landing, download, or results page on the publishing organisation's domain \
+(e.g. weforum.org/publications/... for a WEF report, imd.org's competitiveness \
+ranking page). Being on the organisation's domain is NECESSARY but NOT \
+SUFFICIENT — the page itself must present, host, or link the report/index \
+document, its methodology, or its results/rankings.
+    Mark "Secondary" for ALL of the following, even when hosted on the \
+organisation's own domain:
+      - News, press-release, or media-centre pages (URL paths like \
+/news/, /media/, /press/, /media-centre/) that report ON something — an \
+event, a partnership, a delivery of aid — rather than presenting a \
+report/index itself.
+      - Blog posts, opinion pieces, or staff bio/profile pages (e.g. \
+blogs.worldbank.org, a person's staff page).
+      - Program, initiative, or "hub" microsites and case-study pages that \
+describe ongoing work rather than a specific published report (e.g. \
+initiatives.weforum.org project pages).
+      - Video, webinar, or livestream asset pages (e.g. webtv.un.org).
+      - A country/region overview page for the organisation (e.g. an \
+"WHO EMRO — United Arab Emirates" hub page) that is not itself the report.
+      - A news article, or a social post on Facebook, Instagram, LinkedIn, \
+X/Twitter, TikTok, or YouTube, reporting ON the report rather than being \
+the report's own page — on ANY domain, including third-party news sites.
+    When genuinely unsure whether a same-domain page is the report itself \
+or content about it, default to "Secondary" — a false "Official" is worse \
+than a false "Secondary" here, since Official rows feed a reports-only \
+archive.
   - category: classify the report into EXACTLY ONE of these 8 categories, \
 choosing the single best fit even if the report could arguably touch more \
 than one:
@@ -249,12 +271,17 @@ the report name / organisation / UAE mention / year given — a full date if
 somehow implied, otherwise month+year, otherwise just the year, otherwise
 null if genuinely undeterminable. Never guess a date not implied by the input.
 
-Also provide source_type: "Official" if the SOURCE URL's domain is the
-publishing organisation's own site (e.g. weforum.org for a WEF report), or
-"Secondary" if the URL is a news site, or Facebook/Instagram/LinkedIn/X/
-TikTok/YouTube — anything reporting ON the report rather than being the
-report's own page. Compare the URL's domain against the given ORGANISATION
-name to judge this.
+Also provide source_type: "Official" ONLY if the SOURCE URL is the report/
+index's own landing, download, or results page on the publishing
+organisation's domain — the domain matching the ORGANISATION name is
+necessary but NOT sufficient. Judge from the URL path and the REPORT name
+whether the page actually presents that report/index, or whether it is
+something else on the same domain: a news/press-release page (/news/,
+/media/, /press/), a blog post, a staff bio, a program/initiative
+microsite, a video asset page, or a country-overview hub page. Any of
+those — even on the organisation's own domain — is "Secondary", as is any
+news article or social media post on any domain. When unsure, default to
+"Secondary".
 
 Respond with ONLY a JSON array, one object per input item, in the same order
 given, with this exact shape and no other text:
