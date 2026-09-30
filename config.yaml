@@ -129,6 +129,7 @@ already_tracked:
   - "Global Innovation Index"
   - "Global Talent Competitiveness Index"
   - "WEF Executive Opinion Survey"
+  - "Edelman Trust Barometer"
 
 # Priority scoring thresholds — how the classifier should think about tiers.
 # (Full rubric text lives in discovery/classify.py; this is just the label set.)
