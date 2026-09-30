@@ -15,7 +15,7 @@ landing page).
 
 import re
 from difflib import SequenceMatcher
-from typing import List, Set
+from typing import Any, Dict, List, Set
 from urllib.parse import urlparse
 
 from discovery.search import SearchResult
@@ -67,6 +67,51 @@ def filter_against_existing(
 ) -> List[SearchResult]:
     """Removes results whose normalized URL is already in the inbox CSV."""
     return [r for r in results if normalize_url(r.url) not in existing_urls]
+
+
+_PRIORITY_RANK = {"high": 0, "medium": 1, "low": 2, "ignore": 3, "unclassified": 4}
+
+
+def collapse_same_report(classified: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    After classification, several results in the SAME run can turn out to be
+    the same report edition found via different official pages (e.g. a GII
+    results page, its data-tracker page, and its full PDF all showing up as
+    three "new" rows on the same day) — the earlier title-based dedupe in
+    dedupe_results() often misses these because the page titles differ even
+    though report_name/organisation (extracted by the classifier) agree.
+
+    Groups by normalized (report_name, organisation) and keeps one item per
+    group: the highest-priority one, breaking ties by preferring
+    source_type == "Official". This only collapses duplicates found within
+    this run — it does not touch anything already in the inbox CSV.
+    """
+    groups: Dict[tuple, Dict[str, Any]] = {}
+    order: List[tuple] = []
+
+    for item in classified:
+        name = normalize_title(item.get("report_name") or item.get("title") or "")
+        org = normalize_title(item.get("organisation") or "")
+        key = (name, org)
+        if not name:
+            # no usable report name to group on — keep as its own item
+            key = (f"__unnamed_{len(order)}", org)
+
+        existing = groups.get(key)
+        if existing is None:
+            groups[key] = item
+            order.append(key)
+            continue
+
+        item_rank = _PRIORITY_RANK.get(item.get("priority"), 9)
+        existing_rank = _PRIORITY_RANK.get(existing.get("priority"), 9)
+        if item_rank < existing_rank:
+            groups[key] = item
+        elif item_rank == existing_rank:
+            if item.get("source_type") == "Official" and existing.get("source_type") != "Official":
+                groups[key] = item
+
+    return [groups[k] for k in order]
 
 
 def matches_already_tracked(title: str, already_tracked: List[str]) -> bool:

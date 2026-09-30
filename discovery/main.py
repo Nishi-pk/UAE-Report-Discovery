@@ -26,7 +26,12 @@ import sys
 import yaml
 
 from discovery.search import run_all_searches
-from discovery.dedupe import dedupe_results, filter_against_existing, matches_already_tracked
+from discovery.dedupe import (
+    collapse_same_report,
+    dedupe_results,
+    filter_against_existing,
+    matches_already_tracked,
+)
 from discovery.classify import classify_all
 from discovery.inbox import load_existing_urls, append_rows, build_row
 from discovery.digest import build_digest, save_digest
@@ -96,6 +101,11 @@ def main():
             before = len(classified)
             classified = [c for c in classified if c["priority"] != "ignore"]
             print(f"[main] dropped {before - len(classified)} ⚪ ignore results")
+
+        before = len(classified)
+        classified = collapse_same_report(classified)
+        print(f"[main] collapsed {before - len(classified)} same-run duplicate "
+              f"pages of the same report (kept best per report+organisation)")
 
     already_tracked_list = config.get("already_tracked", [])
     rows = []
