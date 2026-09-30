@@ -443,7 +443,6 @@
   <button class="chip priority-chip" data-filter="🟠">🟠 Medium</button>
   <button class="chip priority-chip" data-filter="🟡">🟡 Low</button>
   <button class="chip priority-chip" data-filter="⚠️">⚠️ Unclassified</button>
-  <button class="chip" id="sourceToggle" data-hide-secondary="true" title="Hide news articles and social posts about a report — show only its own official page, or items not yet classified">Hide news/secondary</button>
   <select id="categoryFilter" class="chip" style="cursor:pointer; font-weight:600; color:var(--slate); appearance:auto;">
     <option value="all">All Categories</option>
     <option value="Political Representation">Political Representation</option>
@@ -535,7 +534,6 @@ let activeFilter = 'all';
 let activeCategory = 'all';
 let currentTab = 'reports';
 let dateScope = 'today'; // 'today' or 'all'
-let hideSecondary = true; // default: hide news articles/social posts, show only official pages + unclassified
 const TODAY_STR = new Date().toISOString().slice(0, 10);
 
 const priorityOrder = { '🔴': 0, '🟠': 1, '🟡': 2, '⚠️': 3 };
@@ -595,9 +593,6 @@ function render() {
     if (activeFilter !== 'all' && getPriorityEmoji(r.Priority) !== activeFilter) return false;
     if (activeCategory !== 'all' && (r['Category'] || '') !== activeCategory) return false;
     if (dateScope === 'today' && (r['Date Found'] || '') !== TODAY_STR) return false;
-    // News articles and social posts ABOUT a report, not blank/unclassified rows —
-    // those still need review since we don't yet know their source type.
-    if (hideSecondary && (r['Source Type'] || '').trim() === 'Secondary') return false;
     const q = document.getElementById('searchBox').value.toLowerCase();
     if (!q) return true;
     return (r.Report || '').toLowerCase().includes(q)
@@ -722,14 +717,6 @@ document.querySelectorAll('.priority-chip').forEach(chip => {
 });
 
 document.getElementById('searchBox').addEventListener('input', render);
-
-const sourceToggleBtn = document.getElementById('sourceToggle');
-sourceToggleBtn.classList.add('active'); // hideSecondary starts true
-sourceToggleBtn.addEventListener('click', () => {
-  hideSecondary = !hideSecondary;
-  sourceToggleBtn.classList.toggle('active', hideSecondary);
-  render();
-});
 
 document.getElementById('categoryFilter').addEventListener('change', (e) => {
   activeCategory = e.target.value;
